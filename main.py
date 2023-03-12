@@ -4,15 +4,12 @@ from flask_ckeditor import CKEditor
 from datetime import date
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.orm import relationship
 from flask_login import UserMixin, login_user, LoginManager, login_required, current_user, logout_user
 from forms import CreatePostForm, RegisterForm, LoginForm, CommentForm
-from flask_gravatar import Gravatar
 from sqlalchemy.exc import IntegrityError
 import functools
 import os
-import psycopg2
-from flask_migrate import Migrate
+
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get("MY_SECRET_KEY")
@@ -22,12 +19,8 @@ ckeditor = CKEditor(app)
 Bootstrap(app)
 
 ##CONNECT TO DB
-db_uri = os.environ.get('DATABASE_URL')
-if db_uri is not None and db_uri.startswith('postgres://'):
-    db_uri = db_uri.replace('postgres://', 'postgresql://', 1)
-app.config['SQLALCHEMY_DATABASE_URI'] = db_uri or 'sqlite:///blog.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:indirjasko@localhost/app-db' or 'sqlite:///blog.db'
 db = SQLAlchemy(app)
-migrate = Migrate(app, db)
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -93,6 +86,8 @@ class Comment(db.Model):
 # id now equals to the ID of the user object in table, therefore this function queries database and fetches and returns
 # that object. Therefore, whenever we need to work with the table object of the currently logged-in user we can use
 # current_user - this is a global object provided by the Flask-Login, and it represents currently logged-in user.
+
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
@@ -179,7 +174,6 @@ def login():
         if existing_user:
             if check_password_hash(existing_user.password, form.password.data):
                 login_user(existing_user)
-                print(f"Key: {os.environ.get('MY_SECRET_KEY')}")
                 return redirect(url_for("get_all_posts"))
             else:
                 flash("Incorrect password. Try again.")
@@ -236,7 +230,7 @@ def about():
 
 # This function renders contact.html page. You can only access the contact.html if you are logged in, that is because of
 # Flask-Login @login_required decorator
-@app.route("/contact")
+@app.route("/contact", methods=["GET", "POST"])
 @login_required
 def contact():
     return render_template("contact.html")
@@ -246,6 +240,7 @@ def contact():
 # creates new post and stores it inside the table blog_posts in database. It can only be accessed by admin.
 @app.route("/new-post", methods=["GET", "POST"])
 @admin_only
+@login_required
 def add_new_post():
     form = CreatePostForm()
     if form.validate_on_submit():
@@ -275,30 +270,35 @@ def add_new_post():
 # table will be updated with new values that you have entered.
 @app.route("/edit-post/<int:post_id>", methods=["GET", "POST"])
 @admin_only
+@login_required
 def edit_post(post_id):
-    post = BlogPost.query.get(post_id)
-    edit_form = CreatePostForm(
-        title=post.title,
-        subtitle=post.subtitle,
-        img_url=post.img_url,
-        author=post.author,
-        body=post.body
-    )
-    if request.method == "POST" and edit_form.validate_on_submit():
-        post.title = edit_form.title.data
-        post.subtitle = edit_form.subtitle.data
-        post.img_url = edit_form.img_url.data
-        post.author = edit_form.author.data
-        post.body = edit_form.body.data
-        with app.app_context():
-            db.session.commit()
-            return redirect(url_for("show_post", post_id=post.id))
-    else:
+    with app.app_context():
+        post = BlogPost.query.get(post_id)
+        edit_form = CreatePostForm(obj=post)
+        if request.method == "POST":
+            if edit_form.validate_on_submit():
+                    post = BlogPost.query.get(post_id)
+                    post.title = edit_form.title.data
+                    post.subtitle = edit_form.subtitle.data
+                    post.img_url = edit_form.img_url.data
+                    post.body = edit_form.body.data
+                    try:
+                        db.session.commit()
+                        flash('Post successfully updated!', 'success')
+                        return redirect(url_for("show_post", post_id=post.id))
+                    except Exception as e:
+                        db.session.rollback()
+                        flash('Error updating post: {}'.format(str(e)), 'danger')
+                    return redirect(url_for("show_post", post_id=post.id))
+            else:
+                flash('Form validation errors: {}'.format(edit_form.errors), 'danger')
         return render_template("make-post.html", form=edit_form, logged_in=current_user.is_authenticated, is_edit=True)
+
 
 # This function deletes post from table in database. It can only be accessed by admin.
 @app.route("/delete/<int:post_id>")
 @admin_only
+@login_required
 def delete_post(post_id):
     with app.app_context():
         post_to_delete = BlogPost.query.get(post_id)
