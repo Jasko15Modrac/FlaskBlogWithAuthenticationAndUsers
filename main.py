@@ -13,8 +13,7 @@ import psycopg2
 
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get("MY_SECRET_KEY")
-secret_key = os.environ.get("MY_SECRET_KEY")
+app.config['SECRET_KEY'] = os.getenv("MY_SECRET_KEY")
 ckeditor = CKEditor(app)
 
 Bootstrap(app)
