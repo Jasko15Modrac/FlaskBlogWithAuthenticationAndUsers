@@ -9,6 +9,7 @@ from forms import CreatePostForm, RegisterForm, LoginForm, CommentForm
 from sqlalchemy.exc import IntegrityError
 import functools
 import os
+import psycopg2
 
 
 app = Flask(__name__)
